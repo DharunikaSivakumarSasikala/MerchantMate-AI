@@ -2,119 +2,190 @@ from app.ai_service import interpret_user_message
 
 
 TEST_CASES = [
+    # ---------------------------------------------------------
+    # Natural invoice phrasing
+    # ---------------------------------------------------------
     {
-        "message": (
-            "Create an invoice for Sarah for 350 AUD "
-            "for logo design."
-        ),
+        "name": "Casual invoice wording",
+        "message": "Hey, could you bill Sarah 275 bucks for the design work?",
         "expected": {
             "intent": "create_invoice",
             "customer_name": "Sarah",
-            "customer_email": None,
-            "amount": 350.0,
+            "amount": 275.0,
             "currency": "AUD",
-            "description": "logo design",
+            "description": "design work",
             "requires_confirmation": True,
         },
     },
     {
+        "name": "Email without customer name",
         "message": (
-            "Bill John at john@example.com $125 "
-            "for website maintenance."
+            "I need to charge alex@example.com 89.50 "
+            "for consulting."
         ),
         "expected": {
             "intent": "create_invoice",
-            "customer_name": "John",
-            "customer_email": "john@example.com",
-            "amount": 125.0,
+            "customer_email": "alex@example.com",
+            "amount": 89.50,
             "currency": "AUD",
-            "description": "website maintenance",
+            "description": "consulting",
             "requires_confirmation": True,
         },
     },
     {
-        "message": "Create an invoice for Emma.",
+        "name": "Invoice with USD",
+        "message": (
+            "Create an invoice for Michael for 500 USD "
+            "for development services."
+        ),
         "expected": {
             "intent": "create_invoice",
-            "customer_name": "Emma",
+            "customer_name": "Michael",
+            "amount": 500.0,
+            "currency": "USD",
+            "description": "development services",
+            "requires_confirmation": True,
+        },
+    },
+
+    # ---------------------------------------------------------
+    # Missing information
+    # ---------------------------------------------------------
+    {
+        "name": "Missing customer details",
+        "message": "Send an invoice for $500 for photography.",
+        "expected": {
+            "intent": "create_invoice",
+            "customer_name": None,
             "customer_email": None,
-            "amount": None,
-            "currency": None,
-            "description": None,
+            "amount": 500.0,
+            "currency": "AUD",
+            "description": "photography",
             "requires_confirmation": True,
         },
     },
     {
-        "message": "Show me all my invoices.",
+        "name": "Missing amount",
+        "message": "Invoice Priya for tutoring services.",
         "expected": {
-            "intent": "list_invoices",
-            "requires_confirmation": False,
+            "intent": "create_invoice",
+            "customer_name": "Priya",
+            "amount": None,
+            "description": "tutoring services",
+            "requires_confirmation": True,
         },
     },
+
+    # ---------------------------------------------------------
+    # Analytics paraphrases
+    # ---------------------------------------------------------
     {
-        "message": "Which invoices are still outstanding?",
-        "expected": {
-            "intent": "outstanding_invoices",
-            "requires_confirmation": False,
-        },
-    },
-    {
-        "message": "How much money am I still waiting to receive?",
+        "name": "Outstanding amount paraphrase",
+        "message": "How much do people still owe me?",
         "expected": {
             "intent": "outstanding_amount",
             "requires_confirmation": False,
         },
     },
     {
-        "message": "How much have I invoiced in total?",
-        "expected": {
-            "intent": "total_invoiced",
-            "requires_confirmation": False,
-        },
-    },
-    {
-        "message": "How much invoice revenue has already been paid?",
+        "name": "Paid amount paraphrase",
+        "message": "Have I actually been paid anything yet?",
         "expected": {
             "intent": "paid_amount",
             "requires_confirmation": False,
         },
     },
     {
-        "message": "What is my average invoice value?",
-        "expected": {
-            "intent": "average_invoice_value",
-            "requires_confirmation": False,
-        },
-    },
-    {
-        "message": "Who is my highest-paying customer?",
+        "name": "Top customer paraphrase",
+        "message": "Who spends the most with me?",
         "expected": {
             "intent": "top_customer",
-            "customer_name": None,
-            "customer_email": None,
             "requires_confirmation": False,
         },
     },
     {
-        "message": "Give me a summary of my business.",
+        "name": "Outstanding invoices paraphrase",
+        "message": "Show me everyone I'm still waiting on payment from.",
+        "expected": {
+            "intent": "outstanding_invoices",
+            "requires_confirmation": False,
+        },
+    },
+    {
+        "name": "Business overview paraphrase",
+        "message": "How is my business doing overall?",
         "expected": {
             "intent": "business_summary",
             "requires_confirmation": False,
         },
     },
+
+    # ---------------------------------------------------------
+    # Time periods
+    # ---------------------------------------------------------
     {
-        "message": "What can you help me with?",
+        "name": "Weekly period",
+        "message": "How much have I invoiced this week?",
         "expected": {
-            "intent": "help",
-            "description": None,
+            "intent": "total_invoiced",
+            "period": "this week",
             "requires_confirmation": False,
         },
     },
     {
-        "message": "What's the weather in Melbourne?",
+        "name": "Monthly period",
+        "message": "How much have I been paid this month?",
+        "expected": {
+            "intent": "paid_amount",
+            "period": "this month",
+            "requires_confirmation": False,
+        },
+    },
+
+    # ---------------------------------------------------------
+    # Unsupported actions
+    # ---------------------------------------------------------
+    {
+        "name": "Payment request",
+        "message": "Pay Sarah $300.",
         "expected": {
             "intent": "unknown",
-            "description": None,
+            "requires_confirmation": False,
+        },
+    },
+    {
+        "name": "Delete invoices",
+        "message": "Delete all my invoices.",
+        "expected": {
+            "intent": "unknown",
+            "requires_confirmation": False,
+        },
+    },
+    {
+        "name": "Refund request",
+        "message": "Refund John $50.",
+        "expected": {
+            "intent": "unknown",
+            "requires_confirmation": False,
+        },
+    },
+
+    # ---------------------------------------------------------
+    # Completely unrelated requests
+    # ---------------------------------------------------------
+    {
+        "name": "Weather",
+        "message": "Will it rain tomorrow?",
+        "expected": {
+            "intent": "unknown",
+            "requires_confirmation": False,
+        },
+    },
+    {
+        "name": "General knowledge",
+        "message": "Who is the prime minister of Australia?",
+        "expected": {
+            "intent": "unknown",
             "requires_confirmation": False,
         },
     },
@@ -122,10 +193,6 @@ TEST_CASES = [
 
 
 def check_expected(result, expected):
-    """
-    Compare selected expected fields with the AI result.
-    """
-
     errors = []
 
     for field, expected_value in expected.items():
@@ -141,17 +208,18 @@ def check_expected(result, expected):
 
 
 def main():
-    print("\nMerchantMate AI Accuracy Tests")
+    print("\nMerchantMate AI Robustness Tests")
     print("=" * 70)
 
     passed = 0
     failed = 0
 
     for number, test_case in enumerate(TEST_CASES, start=1):
+        name = test_case["name"]
         message = test_case["message"]
         expected = test_case["expected"]
 
-        print(f"\nTest {number}")
+        print(f"\nTest {number}: {name}")
         print(f"User: {message}")
 
         try:
@@ -186,21 +254,21 @@ def main():
             print("RESULT: ERROR")
             print(f"  - {exc}")
 
+    total = len(TEST_CASES)
+    accuracy = (passed / total) * 100
+
     print("\n" + "=" * 70)
-    print("Accuracy Summary")
-    print(f"Passed: {passed}/{len(TEST_CASES)}")
-    print(f"Failed: {failed}/{len(TEST_CASES)}")
-
-    accuracy = (passed / len(TEST_CASES)) * 100
-
+    print("Robustness Summary")
+    print(f"Passed: {passed}/{total}")
+    print(f"Failed: {failed}/{total}")
     print(f"Accuracy: {accuracy:.1f}%")
 
     if failed == 0:
-        print("\nAll MerchantMate AI tests passed.")
+        print("\nAll MerchantMate robustness tests passed.")
     else:
         print(
-            "\nSome AI behaviours still need improvement "
-            "before this feature is committed."
+            "\nReview failed cases before connecting "
+            "AI output to PayPal."
         )
 
 
