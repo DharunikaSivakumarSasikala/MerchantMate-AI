@@ -22,8 +22,17 @@ AssistantStatus = Literal[
     "success",
     "needs_information",
     "confirmation_required",
+    "confirmed",
+    "cancelled",
     "unsupported",
     "error",
+]
+
+
+InvoiceField = Literal[
+    "customer_email",
+    "amount",
+    "description",
 ]
 
 
@@ -31,9 +40,9 @@ class AIIntent(BaseModel):
     """
     Structured representation of a user's MerchantMate request.
 
-    The AI layer understands the user's request.
-    Business validation, calculations, and PayPal operations are
-    handled elsewhere.
+    The AI layer understands the request.
+    Business validation, calculations, confirmation state, and
+    PayPal operations are handled elsewhere.
     """
 
     intent: IntentType = Field(
@@ -80,9 +89,24 @@ class AIIntent(BaseModel):
     )
 
 
+class PendingInvoice(BaseModel):
+    """
+    Invoice information collected across multiple conversation turns.
+    """
+
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
+    amount: Optional[float] = Field(
+        default=None,
+        ge=0,
+    )
+    currency: Optional[str] = None
+    description: Optional[str] = None
+
+
 class InvoiceDraft(BaseModel):
     """
-    Validated invoice information waiting for user confirmation.
+    Fully validated invoice ready for explicit user confirmation.
     """
 
     customer_name: Optional[str] = None
@@ -92,9 +116,24 @@ class InvoiceDraft(BaseModel):
     description: str
 
 
+class ConversationState(BaseModel):
+    """
+    MerchantMate state for one active conversation.
+
+    The frontend/API owns this state and passes it back to the
+    assistant service on each message.
+    """
+
+    pending_invoice: Optional[PendingInvoice] = None
+
+    requested_field: Optional[InvoiceField] = None
+
+    awaiting_confirmation: bool = False
+
+
 class AssistantResponse(BaseModel):
     """
-    Standard response returned by the MerchantMate orchestration layer.
+    Standard response from the MerchantMate orchestration layer.
     """
 
     status: AssistantStatus
@@ -112,3 +151,7 @@ class AssistantResponse(BaseModel):
     invoice_draft: Optional[InvoiceDraft] = None
 
     requires_confirmation: bool = False
+
+    state: ConversationState = Field(
+        default_factory=ConversationState
+    )

@@ -300,7 +300,9 @@ def _extract_invoice_name(
         (
             r"\bcreate\s+(?:an?\s+)?invoice\s+for\s+"
             r"(.+?)"
-            r"(?=\s+(?:at\s+)?(?:\$|-?\d|AUD\b|USD\b|EUR\b|GBP\b|for\s+\$|for\s+-?\d))"
+            r"(?=\s+(?:at\s+)?"
+            r"(?:\$|-?\d|AUD\b|USD\b|EUR\b|GBP\b|"
+            r"for\s+\$|for\s+-?\d))"
         ),
 
         # Invoice David 450 USD
@@ -337,7 +339,7 @@ def _extract_invoice_name(
 
         name = match.group(1).strip()
 
-        # Remove a trailing "at" left behind when an email was removed.
+        # Remove trailing "at" left behind after email removal.
         name = re.sub(
             r"\s+at\s*$",
             "",
@@ -345,8 +347,7 @@ def _extract_invoice_name(
             flags=re.IGNORECASE,
         ).strip()
 
-        # Remove trailing "for" from:
-        # "Create an invoice for Robert for $400"
+        # Remove trailing "for" where appropriate.
         name = re.sub(
             r"\s+for\s*$",
             "",
@@ -364,20 +365,24 @@ def _extract_invoice_description(
     user_message: str,
 ) -> str | None:
     """
-    Extract the service description after the monetary amount.
+    Extract an explicit invoice description.
 
-    This avoids confusing:
-        "invoice for Sarah"
-    with:
-        "$300 for consulting"
+    Preferred form:
+        monetary amount + "for" + description
+
+    Also supports:
+        Create an invoice for Sarah at email@example.com for tutoring
+
+    without confusing the customer's name with the description.
     """
 
-    patterns = [
+    amount_patterns = [
         # $300 for consulting
+        # $300 AUD for consulting
         (
             r"\$\s*-?\d[\d,]*(?:\.\d+)?"
-            r"\s+(?:AUD|USD|EUR|GBP)?"
-            r"\s*for\s+(.+?)(?:[.!?]\s*)?$"
+            r"\s*(?:AUD|USD|EUR|GBP)?"
+            r"\s+for\s+(.+?)(?:[.!?]\s*)?$"
         ),
 
         # 300 AUD for consulting
@@ -395,7 +400,7 @@ def _extract_invoice_description(
         ),
     ]
 
-    for pattern in patterns:
+    for pattern in amount_patterns:
         match = re.search(
             pattern,
             user_message,
@@ -409,6 +414,33 @@ def _extract_invoice_description(
 
             if description:
                 return description
+
+    # Handles:
+    #
+    # Create an invoice for Sarah at
+    # sarah@example.com for tutoring.
+    #
+    # Requiring "at <email>" gives us a clear boundary between
+    # the customer information and the invoice description.
+    email_description = re.search(
+        (
+            r"\bat\s+"
+            + EMAIL_PATTERN
+            + r"\s+for\s+"
+            r"(.+?)(?:[.!?]\s*)?$"
+        ),
+        user_message,
+        flags=re.IGNORECASE,
+    )
+
+    if email_description:
+        description = (
+            email_description.group(1)
+            .strip()
+        )
+
+        if description:
+            return description
 
     return None
 
@@ -490,12 +522,13 @@ def _normalise_invoice(
     user_message: str,
 ) -> AIIntent:
     """
-    Build invoice slots from values explicitly present in the
+    Build invoice fields from values explicitly present in the
     current user message.
 
     Ollama determines that the request is an invoice request.
-    Deterministic parsing then protects financial fields from
-    hallucination or omission.
+
+    Deterministic parsing then protects financial and customer fields
+    from hallucination or omission.
     """
 
     emails = _extract_emails(
@@ -522,10 +555,8 @@ def _normalise_invoice(
         user_message
     )
 
-    # IMPORTANT:
-    # Do not construct AIIntent with a negative amount.
-    # Raising here preserves the safety contract tested by the
-    # existing validation suite.
+    # Negative invoice values must never become executable
+    # invoice intents.
     if (
         amount is not None
         and amount < 0
@@ -578,11 +609,14 @@ def _normalise_intent(
             user_message,
         )
 
+    # Invoice-specific information must never leak into
+    # analytics/help/unknown intents.
     result.customer_name = None
     result.customer_email = None
     result.amount = None
     result.currency = None
     result.description = None
+
     result.period = _extract_period(
         user_message
     )
@@ -595,6 +629,14 @@ def _normalise_intent(
 def interpret_user_message(
     user_message: str,
 ) -> AIIntent:
+    """
+    Convert a natural-language MerchantMate request into a validated
+    AIIntent.
+
+    Unsupported financial operations are rejected before the request
+    reaches Ollama.
+    """
+
     if (
         not user_message
         or not user_message.strip()
@@ -607,6 +649,7 @@ def interpret_user_message(
         user_message.strip()
     )
 
+    # Deterministic safety gate before LLM processing.
     if _contains_unsupported_action(
         cleaned_message
     ):
