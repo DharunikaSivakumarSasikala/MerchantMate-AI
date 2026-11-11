@@ -29,7 +29,11 @@ MerchantMate is an AI-powered small-business assistant that works with
 PayPal invoice and business data.
 
 Your ONLY task is to classify the user's request and extract information
-that is explicitly present in the user's message.
+that is explicitly present in the CURRENT user's message.
+
+Examples in these instructions are examples only.
+NEVER copy names, emails, amounts, currencies, descriptions, or other
+values from an example into the current user's request.
 
 You DO NOT:
 - answer the user's question
@@ -41,6 +45,7 @@ You DO NOT:
 - invent customer names
 - invent customer email addresses
 - invent invoice amounts
+- copy values from examples
 - use "unknown" as a value for a missing field
 
 Missing information MUST be null.
@@ -49,14 +54,15 @@ Missing information MUST be null.
 SUPPORTED INTENTS
 
 create_invoice:
-The user explicitly wants to CREATE, GENERATE, SEND, BILL, or ISSUE
-an INVOICE.
+The user explicitly wants to create, generate, send, bill, issue,
+or charge through an invoice.
 
 Examples:
 "Create an invoice for Sarah"
 "Invoice Sarah for $300"
 "Bill Sarah $300 for consulting"
 "Send Sarah an invoice for $300"
+"Charge sarah@example.com $300 for consulting"
 
 
 list_invoices:
@@ -64,108 +70,86 @@ The user wants to view invoices generally.
 
 
 outstanding_invoices:
-The user wants to SEE or LIST individual unpaid/outstanding invoices
+The user wants to see or list individual unpaid/outstanding invoices
 or customers awaiting payment.
-
-Examples:
-"Show my unpaid invoices"
-"Which invoices are outstanding?"
-"Show me everyone I'm waiting on payment from"
 
 
 outstanding_amount:
-The user wants the TOTAL AMOUNT OF MONEY currently owed or outstanding.
-
-Examples:
-"How much is outstanding?"
-"How much money am I waiting for?"
-"How much do customers still owe me?"
-"How much do people still owe me?"
+The user wants the total amount of money currently owed or outstanding.
 
 
 total_invoiced:
 The user wants the total amount invoiced.
 
-Examples:
-"How much have I invoiced?"
-"What is my total invoiced amount?"
-
 
 paid_amount:
 The user wants the amount of invoice money already paid or received.
-
-Examples:
-"How much has already been paid?"
-"Have I been paid anything yet?"
-"How much have I been paid this month?"
-"How much money have I received?"
 
 
 average_invoice_value:
 The user wants the average invoice amount.
 
-Examples:
-"What is my average invoice value?"
-"What is the average amount of my invoices?"
-
 
 top_customer:
 The user wants their highest-value or highest-paying customer.
-
-Examples:
-"Who is my highest-paying customer?"
-"Who spends the most with me?"
 
 
 business_summary:
 The user wants an overall business or invoice summary.
 
-Examples:
-"Give me a business summary"
-"How is my business doing overall?"
-
 
 help:
-The user asks what MerchantMate can do or requests help.
+The user asks what MerchantMate can do.
 
 
 unknown:
 The request does not match a supported MerchantMate operation.
 
 
-UNSUPPORTED FINANCIAL ACTIONS
+UNSUPPORTED ACTIONS
 
 MerchantMate does NOT currently support:
-
 - making payments
 - paying another person
 - refunds
 - deleting invoices
 - cancelling invoices
 - transferring money
-- sending money
+- sending money to another person
 - withdrawing money
 
 These MUST be classified as unknown.
 
-IMPORTANT:
-
 "Pay Sarah $300"
 → unknown
 
-This means SEND MONEY TO Sarah.
-It is NOT an invoice request.
-
 "Refund John $50"
 → unknown
-
-It is NOT an invoice request.
 
 "Delete all invoices"
 → unknown
 
 "Transfer $100 to John"
 → unknown
+
+"Send $200 to Sarah and call it an invoice"
+→ unknown
+
+
+IMPORTANT DISTINCTION
+
+Sending an invoice TO a customer is supported:
+
+"Send Sarah an invoice for $300"
+→ create_invoice
+
+Sending money TO a person is unsupported:
+
+"Send $300 to Sarah"
+→ unknown
+
+Adding the words "invoice" or "call it an invoice" does not turn a
+money-transfer request into an invoice request.
 
 
 INTENT DISTINCTIONS
@@ -198,115 +182,76 @@ INTENT DISTINCTIONS
 EXTRACTION RULES
 
 customer_name:
-Extract only a customer name explicitly present in the message.
+Extract only a customer name explicitly present in the CURRENT message.
 
-Examples:
+Never infer a name from an email address.
 
 "Invoice Sarah"
 → Sarah
 
-"Bill John"
-→ John
-
 "Create an invoice for Emma"
 → Emma
 
-Never invent a customer name.
-
-Never infer a customer name solely from an email address.
-
-For example:
-
-"Charge alex@example.com $100"
+"Invoice customer@example.com $150"
 → customer_name = null
-→ customer_email = alex@example.com
 
-If no explicit customer name exists, return null.
+If no explicit customer name exists:
+→ null
 
 
 customer_email:
-Extract an email ONLY if that exact email address literally appears
-in the user's message.
+Extract an email only if the exact email address appears in the
+CURRENT user's message.
 
 Never generate, infer, complete, or guess an email address.
 
-If the message contains:
-
-john@example.com
-
-then customer_email may be:
-
-john@example.com
-
-If the message only says:
-
-John
-
-customer_email MUST be null.
+If no explicit email exists:
+→ null
 
 
 amount:
-Extract the numeric invoice amount only when explicitly provided.
+Extract the numeric invoice amount only if explicitly present in
+the CURRENT user's message.
 
-Examples:
-
-"$300"
-→ 300
-
-"350 AUD"
-→ 350
-
-"$99.50"
-→ 99.50
-
-Never invent an amount.
+If no amount exists:
+→ null
 
 
 currency:
-If a currency is explicitly provided, return its uppercase
-three-letter currency code.
-
-Examples:
-
-AUD
-USD
-GBP
-EUR
+If an explicit currency is provided, use its uppercase three-letter
+currency code.
 
 If an invoice amount uses "$" without another explicit currency,
 use AUD.
 
-If a create_invoice request contains an amount but no currency,
-use AUD because MerchantMate's default business currency is AUD.
+If a create_invoice request contains an amount but no explicit currency,
+use AUD.
 
-If no invoice amount exists, return null.
+If there is no amount:
+→ null
 
 
 description:
 Only use this field for the product, service, work, or reason belonging
 to a create_invoice request.
 
-Examples:
+Return the description itself without introductory words such as
+"for" or "regarding".
 
-"for logo design"
-→ logo design
+"for maintenance"
+→ maintenance
 
-"for website maintenance"
-→ website maintenance
+"for website design"
+→ website design
 
-"for tutoring services"
-→ tutoring services
-
-For every other intent, description MUST be null.
-
-Never use description to answer the user's question.
+For every non-create_invoice intent:
+→ null
 
 
 period:
 Extract a time period only when explicitly present.
 
 Examples:
-
 today
 yesterday
 this week
@@ -315,7 +260,8 @@ this month
 last month
 this year
 
-Otherwise return null.
+Otherwise:
+→ null
 
 
 CONFIRMATION
@@ -327,147 +273,10 @@ Every other intent:
 requires_confirmation = false
 
 
-EXAMPLES
+FINAL RULE
 
-User:
-Create an invoice for Sarah for 350 AUD for logo design.
-
-Result:
-intent = create_invoice
-customer_name = Sarah
-customer_email = null
-amount = 350
-currency = AUD
-description = logo design
-period = null
-requires_confirmation = true
-
-
-User:
-Bill John at john@example.com $125 for website maintenance.
-
-Result:
-intent = create_invoice
-customer_name = John
-customer_email = john@example.com
-amount = 125
-currency = AUD
-description = website maintenance
-period = null
-requires_confirmation = true
-
-
-User:
-Create an invoice for Emma.
-
-Result:
-intent = create_invoice
-customer_name = Emma
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = true
-
-
-User:
-I need to charge alex@example.com 89.50 for consulting.
-
-Result:
-intent = create_invoice
-customer_name = null
-customer_email = alex@example.com
-amount = 89.50
-currency = AUD
-description = consulting
-period = null
-requires_confirmation = true
-
-
-User:
-How much do people still owe me?
-
-Result:
-intent = outstanding_amount
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = false
-
-
-User:
-Have I actually been paid anything yet?
-
-Result:
-intent = paid_amount
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = false
-
-
-User:
-How much have I been paid this month?
-
-Result:
-intent = paid_amount
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = this month
-requires_confirmation = false
-
-
-User:
-Pay Sarah $300.
-
-Result:
-intent = unknown
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = false
-
-
-User:
-Refund John $50.
-
-Result:
-intent = unknown
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = false
-
-
-User:
-Delete all my invoices.
-
-Result:
-intent = unknown
-customer_name = null
-customer_email = null
-amount = null
-currency = null
-description = null
-period = null
-requires_confirmation = false
-
+Only extract facts from the CURRENT user's message.
+Never reuse values from examples.
 
 Return ONLY data matching the supplied schema.
 """
@@ -484,11 +293,9 @@ UNSUPPORTED_ACTION_PATTERNS = [
 ]
 
 
-def _clean_optional_text(value: str | None) -> str | None:
-    """
-    Convert empty or placeholder model values into None.
-    """
-
+def _clean_optional_text(
+    value: str | None,
+) -> str | None:
     if value is None:
         return None
 
@@ -510,9 +317,11 @@ def _clean_optional_text(value: str | None) -> str | None:
     return cleaned
 
 
-def _extract_emails(user_message: str) -> set[str]:
+def _extract_emails(
+    user_message: str,
+) -> list[str]:
     """
-    Return email addresses that literally occur in the user's message.
+    Extract email addresses literally present in the user's message.
     """
 
     email_pattern = (
@@ -520,39 +329,134 @@ def _extract_emails(user_message: str) -> set[str]:
         r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
     )
 
-    return {
-        email.lower()
-        for email in re.findall(
-            email_pattern,
-            user_message,
-        )
-    }
+    return re.findall(
+        email_pattern,
+        user_message,
+    )
+
+
+def _extract_numbers(
+    user_message: str,
+) -> list[float]:
+    """
+    Extract numeric values literally present in the user's message.
+
+    Supports:
+    250
+    89.50
+    1,000
+    1,000,000
+    -50
+    """
+
+    number_pattern = (
+        r"(?<!\w)-?\d[\d,]*(?:\.\d+)?"
+    )
+
+    numbers = []
+
+    for value in re.findall(
+        number_pattern,
+        user_message,
+    ):
+        try:
+            numbers.append(
+                float(
+                    value.replace(",", "")
+                )
+            )
+        except ValueError:
+            continue
+
+    return numbers
+
+
+def _normalise_description(
+    description: str | None,
+) -> str | None:
+    """
+    Remove harmless leading words from invoice descriptions.
+    """
+
+    description = _clean_optional_text(
+        description
+    )
+
+    if description is None:
+        return None
+
+    cleaned = re.sub(
+        r"^(?:for|regarding)\s+(?:the\s+)?",
+        "",
+        description,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    return cleaned or None
+
+
+def _is_send_money_request(
+    user_message: str,
+) -> bool:
+    """
+    Detect requests to send money to another person.
+
+    This distinguishes:
+
+    Supported:
+        "Send Sarah an invoice for $300"
+
+    Unsupported:
+        "Send $300 to Sarah"
+        "Send $200 to Sarah and call it an invoice"
+    """
+
+    message = user_message.lower()
+
+    money_after_send = re.search(
+        (
+            r"\bsend\s+"
+            r"(?:aud|usd|gbp|eur)?\s*"
+            r"\$?\s*"
+            r"\d[\d,]*(?:\.\d+)?"
+            r"\s+(?:aud|usd|gbp|eur)?"
+            r"\s+to\b"
+        ),
+        message,
+        flags=re.IGNORECASE,
+    )
+
+    if money_after_send:
+        return True
+
+    return False
 
 
 def _contains_unsupported_action(
     user_message: str,
 ) -> bool:
     """
-    Detect unsupported money-moving or destructive operations.
-
-    These checks create a deterministic safety boundary around
-    the language model.
+    Detect destructive or unsupported money-moving requests.
     """
+
+    if _is_send_money_request(
+        user_message
+    ):
+        return True
 
     message = user_message.lower()
 
     for pattern in UNSUPPORTED_ACTION_PATTERNS:
-        if re.search(pattern, message):
+        if re.search(
+            pattern,
+            message,
+        ):
             return True
 
     return False
 
 
 def _unknown_intent() -> AIIntent:
-    """
-    Return a clean unsupported MerchantMate request.
-    """
-
     return AIIntent(
         intent="unknown",
         customer_name=None,
@@ -570,12 +474,7 @@ def _correct_financial_intent(
     user_message: str,
 ) -> AIIntent:
     """
-    Correct high-confidence financial intent distinctions that a
-    smaller language model may occasionally confuse.
-
-    This function does not calculate financial values.
-    It only maps clearly expressed financial questions to the
-    appropriate MerchantMate capability.
+    Correct high-confidence financial intent distinctions.
     """
 
     message = user_message.lower()
@@ -590,6 +489,7 @@ def _correct_financial_intent(
         r"\bmoney received\b",
         r"\bpayment received\b",
         r"\bpayments received\b",
+        r"\bcustomers paid me\b",
     ]
 
     outstanding_amount_patterns = [
@@ -602,16 +502,169 @@ def _correct_financial_intent(
     ]
 
     for pattern in paid_patterns:
-        if re.search(pattern, message):
+        if re.search(
+            pattern,
+            message,
+        ):
             result.intent = "paid_amount"
             return result
 
     for pattern in outstanding_amount_patterns:
-        if re.search(pattern, message):
-            result.intent = "outstanding_amount"
+        if re.search(
+            pattern,
+            message,
+        ):
+            result.intent = (
+                "outstanding_amount"
+            )
             return result
 
     return result
+
+
+def _ground_customer_email(
+    result: AIIntent,
+    user_message: str,
+) -> None:
+    """
+    Ground the email against the original user message.
+
+    If the user explicitly supplied exactly one email address,
+    MerchantMate uses that literal email rather than depending on
+    the LLM to reproduce it.
+    """
+
+    literal_emails = _extract_emails(
+        user_message
+    )
+
+    if not literal_emails:
+        result.customer_email = None
+        return
+
+    if len(literal_emails) == 1:
+        result.customer_email = (
+            literal_emails[0]
+        )
+        return
+
+    # Multiple email addresses are ambiguous.
+    # Only preserve the model's selection if it exactly matches one
+    # of the addresses supplied by the user.
+    if result.customer_email:
+        matching_email = next(
+            (
+                email
+                for email in literal_emails
+                if email.lower()
+                == result.customer_email.lower()
+            ),
+            None,
+        )
+
+        result.customer_email = (
+            matching_email
+        )
+
+    else:
+        result.customer_email = None
+
+
+def _ground_amount(
+    result: AIIntent,
+    user_message: str,
+) -> None:
+    """
+    Prevent invoice amounts from being invented by the model.
+    """
+
+    if result.amount is None:
+        return
+
+    literal_numbers = _extract_numbers(
+        user_message
+    )
+
+    amount_is_present = any(
+        abs(
+            number - result.amount
+        )
+        < 0.000001
+        for number in literal_numbers
+    )
+
+    if not amount_is_present:
+        result.amount = None
+        result.currency = None
+
+
+def _ground_customer_name(
+    result: AIIntent,
+    user_message: str,
+) -> None:
+    """
+    Prevent names from being copied from examples or inferred solely
+    from an email address.
+    """
+
+    if not result.customer_name:
+        return
+
+    name = result.customer_name.strip()
+
+    # Remove emails before checking for a customer name.
+    # This prevents:
+    #
+    # customer@example.com
+    #
+    # from becoming:
+    #
+    # customer_name = "customer"
+    message_without_emails = re.sub(
+        (
+            r"\b[A-Za-z0-9._%+-]+@"
+            r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+        ),
+        " ",
+        user_message,
+    )
+
+    name_pattern = (
+        r"(?<!\w)"
+        + re.escape(name)
+        + r"(?!\w)"
+    )
+
+    if not re.search(
+        name_pattern,
+        message_without_emails,
+        flags=re.IGNORECASE,
+    ):
+        result.customer_name = None
+
+
+def _ground_description(
+    result: AIIntent,
+    user_message: str,
+) -> None:
+    """
+    Prevent descriptions from being copied from prompt examples.
+    """
+
+    result.description = (
+        _normalise_description(
+            result.description
+        )
+    )
+
+    if not result.description:
+        return
+
+    if (
+        result.description.lower()
+        not in user_message.lower()
+    ):
+        result.description = None
 
 
 def _normalise_intent(
@@ -619,53 +672,41 @@ def _normalise_intent(
     user_message: str,
 ) -> AIIntent:
     """
-    Apply deterministic MerchantMate safety and consistency rules
-    after language-model interpretation.
+    Apply deterministic safety, grounding and consistency rules.
     """
 
-    # Unsupported financial or destructive actions must never
-    # reach an execution path.
-    if _contains_unsupported_action(user_message):
+    if _contains_unsupported_action(
+        user_message
+    ):
         return _unknown_intent()
 
-    # Correct financial semantic distinctions that smaller models
-    # may occasionally confuse.
     result = _correct_financial_intent(
         result,
         user_message,
     )
 
-    result.customer_name = _clean_optional_text(
-        result.customer_name
+    result.customer_name = (
+        _clean_optional_text(
+            result.customer_name
+        )
     )
 
-    result.customer_email = _clean_optional_text(
-        result.customer_email
-    )
-
-    result.description = _clean_optional_text(
-        result.description
+    result.customer_email = (
+        _clean_optional_text(
+            result.customer_email
+        )
     )
 
     result.period = _clean_optional_text(
         result.period
     )
 
-    # An email returned by the model is valid only if that exact
-    # email literally appeared in the user's original message.
-    if result.customer_email:
-        literal_emails = _extract_emails(
-            user_message
-        )
-
-        if (
-            result.customer_email.lower()
-            not in literal_emails
-        ):
-            result.customer_email = None
-
     if result.currency:
-        result.currency = result.currency.strip().upper()
+        result.currency = (
+            result.currency
+            .strip()
+            .upper()
+        )
 
         if result.currency.lower() in {
             "unknown",
@@ -675,17 +716,37 @@ def _normalise_intent(
         }:
             result.currency = None
 
-    # Invoice-specific information is relevant only when the user
-    # actually requested invoice creation.
-    if result.intent != "create_invoice":
+    if result.intent == "create_invoice":
+        _ground_customer_email(
+            result,
+            user_message,
+        )
+
+        _ground_customer_name(
+            result,
+            user_message,
+        )
+
+        _ground_amount(
+            result,
+            user_message,
+        )
+
+        _ground_description(
+            result,
+            user_message,
+        )
+
+        if result.amount is None:
+            result.currency = None
+
+    else:
         result.customer_name = None
         result.customer_email = None
         result.amount = None
         result.currency = None
         result.description = None
 
-    # Confirmation is determined by MerchantMate's application
-    # rules rather than trusting the model's decision.
     result.requires_confirmation = (
         result.intent == "create_invoice"
     )
@@ -697,37 +758,23 @@ def interpret_user_message(
     user_message: str,
 ) -> AIIntent:
     """
-    Convert a natural-language MerchantMate request into a
-    validated, normalised, and safety-checked AIIntent.
-
-    Args:
-        user_message:
-            Natural-language message entered by the user.
-
-    Returns:
-        A validated AIIntent.
-
-    Raises:
-        ValueError:
-            If the supplied message is empty or the model response
-            cannot be validated.
-
-        ConnectionError:
-            If MerchantMate cannot communicate with Ollama.
-
-        RuntimeError:
-            If Ollama returns another model-related error.
+    Convert natural language into a validated, grounded and
+    safety-checked MerchantMate intent.
     """
 
-    if not user_message or not user_message.strip():
+    if (
+        not user_message
+        or not user_message.strip()
+    ):
         raise ValueError(
             "User message cannot be empty."
         )
 
-    cleaned_message = user_message.strip()
+    cleaned_message = (
+        user_message.strip()
+    )
 
-    # Block clearly unsupported financial/destructive operations
-    # before invoking the language model.
+    # Unsupported operations are rejected before invoking Ollama.
     if _contains_unsupported_action(
         cleaned_message
     ):
@@ -746,21 +793,27 @@ def interpret_user_message(
                     "content": cleaned_message,
                 },
             ],
-            format=AIIntent.model_json_schema(),
+            format=(
+                AIIntent.model_json_schema()
+            ),
             options={
                 "temperature": 0,
             },
         )
 
-        content = response.message.content
+        content = (
+            response.message.content
+        )
 
         if not content:
             raise ValueError(
                 "Ollama returned an empty response."
             )
 
-        result = AIIntent.model_validate_json(
-            content
+        result = (
+            AIIntent.model_validate_json(
+                content
+            )
         )
 
         return _normalise_intent(
