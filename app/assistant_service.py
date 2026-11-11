@@ -18,8 +18,10 @@ from app.models import (
     PendingInvoice,
 )
 from app.paypal_service import (
+    create_invoice,
     get_outstanding_invoices,
     list_invoices,
+    send_invoice,
 )
 
 
@@ -41,6 +43,9 @@ CONFIRMATION_WORDS = {
     "create it",
     "send it",
     "create and send",
+    "retry",
+    "retry send",
+    "try again",
 }
 
 
@@ -123,13 +128,19 @@ def _get_missing_pending_fields(
     missing = []
 
     if not invoice.customer_email:
-        missing.append("customer_email")
+        missing.append(
+            "customer_email"
+        )
 
     if invoice.amount is None:
-        missing.append("amount")
+        missing.append(
+            "amount"
+        )
 
     if not invoice.description:
-        missing.append("description")
+        missing.append(
+            "description"
+        )
 
     return missing
 
@@ -140,8 +151,7 @@ def _next_requested_field(
     """
     Ask for one missing field at a time.
 
-    This makes follow-up messages deterministic instead of asking
-    Ollama to guess what a short answer refers to.
+    This keeps short follow-up answers deterministic.
     """
 
     missing = _get_missing_pending_fields(
@@ -225,7 +235,9 @@ def _validate_pending_invoice(
         )
 
     if invoice.currency:
-        currency = invoice.currency.upper()
+        currency = (
+            invoice.currency.upper()
+        )
 
         if currency not in SUPPORTED_CURRENCIES:
             return (
@@ -241,7 +253,7 @@ def _build_invoice_draft(
     invoice: PendingInvoice,
 ) -> InvoiceDraft:
     """
-    Convert a complete pending invoice into an executable draft.
+    Convert a complete pending invoice into a validated draft.
     """
 
     if not invoice.customer_email:
@@ -304,8 +316,8 @@ def _invoice_preview_message(
         f"Description: {draft.description}\n"
         f"Amount: "
         f"{_format_money(draft.amount, draft.currency)}\n\n"
-        "Type 'confirm' to approve this invoice or "
-        "'cancel' to discard it."
+        "Type 'confirm' to create and send this invoice "
+        "through PayPal, or 'cancel' to discard it."
     )
 
 
@@ -315,8 +327,8 @@ def _confirmation_response(
     """
     Produce the final confirmation preview.
 
-    IMPORTANT:
-    This still does NOT call PayPal.
+    PayPal is not called until a later message explicitly confirms
+    this state.
     """
 
     draft = _build_invoice_draft(
@@ -327,6 +339,7 @@ def _confirmation_response(
         pending_invoice=invoice,
         requested_field=None,
         awaiting_confirmation=True,
+        paypal_invoice_id=None,
     )
 
     return AssistantResponse(
@@ -357,6 +370,7 @@ def _needs_information_response(
         pending_invoice=invoice,
         requested_field=field,
         awaiting_confirmation=False,
+        paypal_invoice_id=None,
     )
 
     return AssistantResponse(
@@ -429,34 +443,13 @@ def _parse_amount_reply(
 
     cleaned = message.strip()
 
-    patterns = [
-        (
-            r"^\$\s*"
-            r"(-?\d[\d,]*(?:\.\d+)?)"
-            r"\s*$"
-        ),
-        (
-            r"^"
-            r"(-?\d[\d,]*(?:\.\d+)?)"
-            r"\s*(AUD|USD|EUR|GBP)"
-            r"\s*$"
-        ),
-        (
-            r"^(AUD|USD|EUR|GBP)"
-            r"\s*"
-            r"(-?\d[\d,]*(?:\.\d+)?)"
-            r"\s*$"
-        ),
-        (
-            r"^"
-            r"(-?\d[\d,]*(?:\.\d+)?)"
-            r"\s*$"
-        ),
-    ]
-
     # $350
     match = re.fullmatch(
-        patterns[0],
+        (
+            r"\$\s*"
+            r"(-?\d[\d,]*(?:\.\d+)?)"
+            r"\s*"
+        ),
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -474,7 +467,11 @@ def _parse_amount_reply(
 
     # 350 AUD
     match = re.fullmatch(
-        patterns[1],
+        (
+            r"(-?\d[\d,]*(?:\.\d+)?)"
+            r"\s*(AUD|USD|EUR|GBP)"
+            r"\s*"
+        ),
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -492,7 +489,12 @@ def _parse_amount_reply(
 
     # AUD 350
     match = re.fullmatch(
-        patterns[2],
+        (
+            r"(AUD|USD|EUR|GBP)"
+            r"\s*"
+            r"(-?\d[\d,]*(?:\.\d+)?)"
+            r"\s*"
+        ),
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -510,7 +512,10 @@ def _parse_amount_reply(
 
     # 350
     match = re.fullmatch(
-        patterns[3],
+        (
+            r"(-?\d[\d,]*(?:\.\d+)?)"
+            r"\s*"
+        ),
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -550,7 +555,9 @@ def _handle_requested_field(
     if field == "customer_email":
         email = user_message.strip()
 
-        if not _is_valid_email(email):
+        if not _is_valid_email(
+            email
+        ):
             return AssistantResponse(
                 status="needs_information",
                 intent="create_invoice",
@@ -643,7 +650,9 @@ def _handle_requested_field(
                 state=state,
             )
 
-        invoice.description = description
+        invoice.description = (
+            description
+        )
 
     else:
         return AssistantResponse(
@@ -682,6 +691,127 @@ def _handle_requested_field(
     )
 
 
+def _execute_confirmed_invoice(
+    invoice: PendingInvoice,
+    state: ConversationState,
+) -> AssistantResponse:
+    """
+    Execute a user-confirmed invoice through PayPal.
+
+    Duplicate protection:
+    - If no PayPal invoice ID exists, create the draft once.
+    - Immediately store the returned PayPal invoice ID.
+    - If sending fails, preserve that ID in returned state.
+    - A later retry sends the existing PayPal invoice rather than
+      creating another invoice.
+    """
+
+    draft = _build_invoice_draft(
+        invoice
+    )
+
+    paypal_invoice_id = (
+        state.paypal_invoice_id
+    )
+
+    if not paypal_invoice_id:
+        try:
+            paypal_invoice_id = (
+                create_invoice(
+                    customer_email=(
+                        draft.customer_email
+                    ),
+                    customer_name=(
+                        draft.customer_name
+                        or draft.customer_email
+                    ),
+                    description=(
+                        draft.description
+                    ),
+                    amount=draft.amount,
+                    currency=draft.currency,
+                )
+            )
+
+        except Exception as exc:
+            retry_state = ConversationState(
+                pending_invoice=invoice,
+                requested_field=None,
+                awaiting_confirmation=True,
+                paypal_invoice_id=None,
+            )
+
+            return AssistantResponse(
+                status="error",
+                intent="create_invoice",
+                message=(
+                    "PayPal could not create the invoice. "
+                    "No invoice was sent. "
+                    f"Details: {exc}"
+                ),
+                invoice_draft=draft,
+                requires_confirmation=True,
+                state=retry_state,
+            )
+
+    retry_state = ConversationState(
+        pending_invoice=invoice,
+        requested_field=None,
+        awaiting_confirmation=True,
+        paypal_invoice_id=(
+            paypal_invoice_id
+        ),
+    )
+
+    try:
+        send_invoice(
+            paypal_invoice_id
+        )
+
+    except Exception as exc:
+        return AssistantResponse(
+            status="error",
+            intent="create_invoice",
+            message=(
+                "PayPal created the invoice draft, but "
+                "MerchantMate could not send it. "
+                f"Invoice ID: {paypal_invoice_id}. "
+                "Type 'confirm' or 'retry' to try sending "
+                "this same invoice again, or 'cancel' to "
+                "stop retrying. "
+                f"Details: {exc}"
+            ),
+            data={
+                "paypal_invoice_id": (
+                    paypal_invoice_id
+                ),
+                "sent": False,
+            },
+            invoice_draft=draft,
+            requires_confirmation=True,
+            state=retry_state,
+        )
+
+    return AssistantResponse(
+        status="confirmed",
+        intent="create_invoice",
+        message=(
+            "Invoice created and sent successfully through "
+            "PayPal.\n\n"
+            f"PayPal Invoice ID: {paypal_invoice_id}"
+        ),
+        data={
+            "paypal_invoice_id": (
+                paypal_invoice_id
+            ),
+            "sent": True,
+        },
+        invoice_draft=draft,
+        requires_confirmation=False,
+        state=_empty_state(),
+    )
+
+
 def _handle_confirmation_message(
     user_message: str,
     state: ConversationState,
@@ -701,6 +831,26 @@ def _handle_confirmation_message(
     if _is_cancellation(
         user_message
     ):
+        if state.paypal_invoice_id:
+            return AssistantResponse(
+                status="cancelled",
+                intent="create_invoice",
+                message=(
+                    "MerchantMate stopped retrying the invoice "
+                    "send operation. A PayPal draft may already "
+                    "exist with invoice ID "
+                    f"{state.paypal_invoice_id}. "
+                    "MerchantMate did not create another invoice."
+                ),
+                data={
+                    "paypal_invoice_id": (
+                        state.paypal_invoice_id
+                    ),
+                    "sent": False,
+                },
+                state=_empty_state(),
+            )
+
         return AssistantResponse(
             status="cancelled",
             intent="create_invoice",
@@ -718,37 +868,34 @@ def _handle_confirmation_message(
             invoice
         )
 
+        if state.paypal_invoice_id:
+            message = (
+                "A PayPal invoice draft already exists with "
+                f"ID {state.paypal_invoice_id}, but it has not "
+                "been successfully sent by MerchantMate. "
+                "Type 'confirm' or 'retry' to retry sending "
+                "that same invoice, or 'cancel' to stop."
+            )
+
+        else:
+            message = (
+                "Please type 'confirm' to create and send "
+                "the invoice through PayPal, or 'cancel' "
+                "to discard it."
+            )
+
         return AssistantResponse(
             status="confirmation_required",
             intent="create_invoice",
-            message=(
-                "Please type 'confirm' to approve the "
-                "invoice or 'cancel' to discard it."
-            ),
+            message=message,
             invoice_draft=draft,
             requires_confirmation=True,
             state=state,
         )
 
-    draft = _build_invoice_draft(
-        invoice
-    )
-
-    # SECURITY BOUNDARY:
-    #
-    # Step 8A deliberately stops here.
-    # PayPal execution will be connected only after this state
-    # machine has passed its tests.
-    return AssistantResponse(
-        status="confirmed",
-        intent="create_invoice",
-        message=(
-            "Invoice confirmation accepted. "
-            "PayPal execution is not enabled yet."
-        ),
-        invoice_draft=draft,
-        requires_confirmation=False,
-        state=_empty_state(),
+    return _execute_confirmed_invoice(
+        invoice,
+        state,
     )
 
 
@@ -767,7 +914,9 @@ def _handle_list_invoices() -> AssistantResponse:
 
 
 def _handle_outstanding_invoices() -> AssistantResponse:
-    invoices = get_outstanding_invoices()
+    invoices = (
+        get_outstanding_invoices()
+    )
 
     return AssistantResponse(
         status="success",
@@ -781,7 +930,9 @@ def _handle_outstanding_invoices() -> AssistantResponse:
 
 
 def _handle_outstanding_amount() -> AssistantResponse:
-    amount = calculate_outstanding_amount()
+    amount = (
+        calculate_outstanding_amount()
+    )
 
     return AssistantResponse(
         status="success",
@@ -798,7 +949,9 @@ def _handle_outstanding_amount() -> AssistantResponse:
 
 
 def _handle_total_invoiced() -> AssistantResponse:
-    amount = calculate_total_invoiced()
+    amount = (
+        calculate_total_invoiced()
+    )
 
     return AssistantResponse(
         status="success",
@@ -815,7 +968,9 @@ def _handle_total_invoiced() -> AssistantResponse:
 
 
 def _handle_paid_amount() -> AssistantResponse:
-    amount = calculate_paid_amount()
+    amount = (
+        calculate_paid_amount()
+    )
 
     return AssistantResponse(
         status="success",
@@ -832,7 +987,9 @@ def _handle_paid_amount() -> AssistantResponse:
 
 
 def _handle_average_invoice_value() -> AssistantResponse:
-    amount = calculate_average_invoice_value()
+    amount = (
+        calculate_average_invoice_value()
+    )
 
     return AssistantResponse(
         status="success",
@@ -916,25 +1073,41 @@ def process_intent(
     intent: AIIntent,
 ) -> AssistantResponse:
     handlers = {
-        "create_invoice": lambda: _handle_create_invoice(
-            intent
+        "create_invoice": lambda: (
+            _handle_create_invoice(
+                intent
+            )
         ),
-        "list_invoices": _handle_list_invoices,
+        "list_invoices": (
+            _handle_list_invoices
+        ),
         "outstanding_invoices": (
             _handle_outstanding_invoices
         ),
         "outstanding_amount": (
             _handle_outstanding_amount
         ),
-        "total_invoiced": _handle_total_invoiced,
-        "paid_amount": _handle_paid_amount,
+        "total_invoiced": (
+            _handle_total_invoiced
+        ),
+        "paid_amount": (
+            _handle_paid_amount
+        ),
         "average_invoice_value": (
             _handle_average_invoice_value
         ),
-        "top_customer": _handle_top_customer,
-        "business_summary": _handle_business_summary,
-        "help": _handle_help,
-        "unknown": _handle_unknown,
+        "top_customer": (
+            _handle_top_customer
+        ),
+        "business_summary": (
+            _handle_business_summary
+        ),
+        "help": (
+            _handle_help
+        ),
+        "unknown": (
+            _handle_unknown
+        ),
     }
 
     handler = handlers.get(
@@ -960,26 +1133,57 @@ def process_intent(
 
 def process_message(
     user_message: str,
-    state: Optional[ConversationState] = None,
+    state: Optional[
+        ConversationState
+    ] = None,
 ) -> AssistantResponse:
     """
     Main conversational MerchantMate entry point.
 
     State is owned by the caller and returned with every response.
+
+    PayPal execution can only occur when:
+    1. A complete invoice is already stored in state.
+    2. awaiting_confirmation is True.
+    3. The current user message is an explicit confirmation.
     """
 
     current_state = (
-        state or ConversationState()
+        state
+        or ConversationState()
     )
 
     try:
-        # Cancellation is allowed at either invoice conversation stage.
         if (
             current_state.pending_invoice
             and _is_cancellation(
                 user_message
             )
         ):
+            if (
+                current_state.paypal_invoice_id
+            ):
+                return AssistantResponse(
+                    status="cancelled",
+                    intent="create_invoice",
+                    message=(
+                        "MerchantMate stopped retrying the "
+                        "invoice send operation. A PayPal "
+                        "draft may already exist with invoice "
+                        "ID "
+                        f"{current_state.paypal_invoice_id}. "
+                        "MerchantMate did not create another "
+                        "invoice."
+                    ),
+                    data={
+                        "paypal_invoice_id": (
+                            current_state.paypal_invoice_id
+                        ),
+                        "sent": False,
+                    },
+                    state=_empty_state(),
+                )
+
             return AssistantResponse(
                 status="cancelled",
                 intent="create_invoice",
@@ -993,22 +1197,28 @@ def process_message(
         if (
             current_state.awaiting_confirmation
         ):
-            return _handle_confirmation_message(
-                user_message,
-                current_state,
+            return (
+                _handle_confirmation_message(
+                    user_message,
+                    current_state,
+                )
             )
 
         if (
             current_state.pending_invoice
             and current_state.requested_field
         ):
-            return _handle_requested_field(
-                user_message,
-                current_state,
+            return (
+                _handle_requested_field(
+                    user_message,
+                    current_state,
+                )
             )
 
-        intent = interpret_user_message(
-            user_message
+        intent = (
+            interpret_user_message(
+                user_message
+            )
         )
 
         return process_intent(

@@ -96,10 +96,12 @@ class PendingInvoice(BaseModel):
 
     customer_name: Optional[str] = None
     customer_email: Optional[str] = None
+
     amount: Optional[float] = Field(
         default=None,
         ge=0,
     )
+
     currency: Optional[str] = None
     description: Optional[str] = None
 
@@ -111,7 +113,11 @@ class InvoiceDraft(BaseModel):
 
     customer_name: Optional[str] = None
     customer_email: str
-    amount: float = Field(gt=0)
+
+    amount: float = Field(
+        gt=0
+    )
+
     currency: str
     description: str
 
@@ -122,6 +128,10 @@ class ConversationState(BaseModel):
 
     The frontend/API owns this state and passes it back to the
     assistant service on each message.
+
+    paypal_invoice_id is populated immediately after PayPal creates
+    the invoice. Keeping this ID allows MerchantMate to retry sending
+    the same invoice instead of creating a duplicate.
     """
 
     pending_invoice: Optional[PendingInvoice] = None
@@ -129,6 +139,8 @@ class ConversationState(BaseModel):
     requested_field: Optional[InvoiceField] = None
 
     awaiting_confirmation: bool = False
+
+    paypal_invoice_id: Optional[str] = None
 
 
 class AssistantResponse(BaseModel):

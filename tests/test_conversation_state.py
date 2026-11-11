@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from app.assistant_service import process_message
 
 
@@ -26,6 +28,11 @@ def print_result(
         f"{result.state.awaiting_confirmation}"
     )
 
+    print(
+        "PayPal invoice ID: "
+        f"{result.state.paypal_invoice_id}"
+    )
+
     if result.state.pending_invoice:
         print(
             "Pending invoice: "
@@ -43,6 +50,7 @@ def test_missing_email_flow():
     errors = []
 
     print("\nStep 1")
+
     result1 = process_message(
         "Invoice Sarah $250 for photography."
     )
@@ -64,6 +72,7 @@ def test_missing_email_flow():
     )
 
     print("\nStep 2")
+
     result2 = process_message(
         "sarah@example.com",
         result1.state,
@@ -120,23 +129,72 @@ def test_missing_email_flow():
         )
 
     print("\nStep 3")
-    result3 = process_message(
-        "confirm",
-        result2.state,
-    )
+
+    # PayPal is mocked so this test cannot create or send
+    # a real Sandbox invoice.
+    with (
+        patch(
+            "app.assistant_service.create_invoice",
+            return_value="INV2-MOCK-CONVERSATION",
+        ) as mock_create,
+        patch(
+            "app.assistant_service.send_invoice",
+            return_value=None,
+        ) as mock_send,
+    ):
+        result3 = process_message(
+            "confirm",
+            result2.state,
+        )
 
     print_result(result3)
 
     check(
-        result3.status == "confirmed",
-        "Step 3 should accept confirmation.",
+        result3.status
+        == "confirmed",
+        "Step 3 should execute after explicit confirmation.",
+        errors,
+    )
+
+    check(
+        mock_create.call_count
+        == 1,
+        "PayPal create should be called once.",
+        errors,
+    )
+
+    check(
+        mock_send.call_count
+        == 1,
+        "PayPal send should be called once.",
+        errors,
+    )
+
+    mock_send.assert_called_once_with(
+        "INV2-MOCK-CONVERSATION"
+    )
+
+    check(
+        result3.data
+        == {
+            "paypal_invoice_id":
+                "INV2-MOCK-CONVERSATION",
+            "sent": True,
+        },
+        "Confirmed result should contain the mocked invoice ID.",
         errors,
     )
 
     check(
         result3.state.pending_invoice
         is None,
-        "State should be cleared after confirmation.",
+        "State should clear after successful execution.",
+        errors,
+    )
+
+    check(
+        not result3.state.awaiting_confirmation,
+        "Confirmation state should clear after execution.",
         errors,
     )
 
@@ -147,6 +205,7 @@ def test_multiple_missing_fields():
     errors = []
 
     print("\nStep 1")
+
     result1 = process_message(
         "Create an invoice for Sarah."
     )
@@ -161,6 +220,7 @@ def test_multiple_missing_fields():
     )
 
     print("\nStep 2")
+
     result2 = process_message(
         "sarah@example.com",
         result1.state,
@@ -176,6 +236,7 @@ def test_multiple_missing_fields():
     )
 
     print("\nStep 3")
+
     result3 = process_message(
         "350 AUD",
         result2.state,
@@ -191,6 +252,7 @@ def test_multiple_missing_fields():
     )
 
     print("\nStep 4")
+
     result4 = process_message(
         "logo design",
         result3.state,
@@ -205,7 +267,27 @@ def test_multiple_missing_fields():
         errors,
     )
 
+    check(
+        result4.state.awaiting_confirmation,
+        "Completed invoice should wait for confirmation.",
+        errors,
+    )
+
     if result4.invoice_draft:
+        check(
+            result4.invoice_draft.customer_name
+            == "Sarah",
+            "Customer name should remain Sarah.",
+            errors,
+        )
+
+        check(
+            result4.invoice_draft.customer_email
+            == "sarah@example.com",
+            "Customer email should remain stored.",
+            errors,
+        )
+
         check(
             result4.invoice_draft.amount
             == 350,
@@ -254,16 +336,41 @@ def test_cancel_confirmation():
         errors,
     )
 
-    result2 = process_message(
-        "cancel",
-        result1.state,
-    )
+    # Patch PayPal here as an additional assertion that
+    # cancellation cannot accidentally execute anything.
+    with (
+        patch(
+            "app.assistant_service.create_invoice"
+        ) as mock_create,
+        patch(
+            "app.assistant_service.send_invoice"
+        ) as mock_send,
+    ):
+        result2 = process_message(
+            "cancel",
+            result1.state,
+        )
 
     print_result(result2)
 
     check(
-        result2.status == "cancelled",
+        result2.status
+        == "cancelled",
         "Cancel should cancel the invoice.",
+        errors,
+    )
+
+    check(
+        mock_create.call_count
+        == 0,
+        "Cancellation must not create a PayPal invoice.",
+        errors,
+    )
+
+    check(
+        mock_send.call_count
+        == 0,
+        "Cancellation must not send a PayPal invoice.",
         errors,
     )
 
@@ -305,6 +412,12 @@ def test_invalid_email():
         errors,
     )
 
+    check(
+        not result2.state.awaiting_confirmation,
+        "Invalid email must not reach confirmation.",
+        errors,
+    )
+
     return errors
 
 
@@ -320,8 +433,6 @@ def test_invalid_amount():
 
     print_result(result1)
 
-    # Depending on extraction, description is also missing,
-    # but amount should be requested before description.
     check(
         result1.state.requested_field
         == "amount",
@@ -350,6 +461,12 @@ def test_invalid_amount():
         errors,
     )
 
+    check(
+        not result2.state.awaiting_confirmation,
+        "Invalid amount must not reach confirmation.",
+        errors,
+    )
+
     return errors
 
 
@@ -363,10 +480,25 @@ def test_non_confirmation():
         )
     )
 
-    result2 = process_message(
-        "maybe",
-        result1.state,
+    check(
+        result1.status
+        == "confirmation_required",
+        "Invoice should reach confirmation first.",
+        errors,
     )
+
+    with (
+        patch(
+            "app.assistant_service.create_invoice"
+        ) as mock_create,
+        patch(
+            "app.assistant_service.send_invoice"
+        ) as mock_send,
+    ):
+        result2 = process_message(
+            "maybe",
+            result1.state,
+        )
 
     print_result(result2)
 
@@ -383,6 +515,20 @@ def test_non_confirmation():
         errors,
     )
 
+    check(
+        mock_create.call_count
+        == 0,
+        "Ambiguous confirmation must not create an invoice.",
+        errors,
+    )
+
+    check(
+        mock_send.call_count
+        == 0,
+        "Ambiguous confirmation must not send an invoice.",
+        errors,
+    )
+
     return errors
 
 
@@ -390,11 +536,14 @@ def main():
     print(
         "\nMerchantMate Multi-Turn Conversation Tests"
     )
-    print("=" * 70)
+
+    print(
+        "=" * 70
+    )
 
     tests = [
         (
-            "Missing email → confirmation",
+            "Missing email → mocked PayPal execution",
             test_missing_email_flow,
         ),
         (
@@ -431,12 +580,15 @@ def main():
         print(
             f"\n{'-' * 70}"
         )
+
         print(
             f"Test {number}: {name}"
         )
 
         try:
-            errors = test_function()
+            errors = (
+                test_function()
+            )
 
         except Exception as exc:
             errors = [
@@ -444,7 +596,9 @@ def main():
             ]
 
         if errors:
-            print("\nRESULT: FAIL")
+            print(
+                "\nRESULT: FAIL"
+            )
 
             for error in errors:
                 print(
@@ -452,18 +606,38 @@ def main():
                 )
 
         else:
-            print("\nRESULT: PASS")
+            print(
+                "\nRESULT: PASS"
+            )
+
             passed += 1
 
-    total = len(tests)
-    failed = total - passed
+    total = len(
+        tests
+    )
 
-    print("\n" + "=" * 70)
-    print("Multi-Turn Conversation Summary")
-    print(f"Passed: {passed}/{total}")
-    print(f"Failed: {failed}/{total}")
+    failed = (
+        total - passed
+    )
+
     print(
-        f"Accuracy: "
+        "\n" + "=" * 70
+    )
+
+    print(
+        "Multi-Turn Conversation Summary"
+    )
+
+    print(
+        f"Passed: {passed}/{total}"
+    )
+
+    print(
+        f"Failed: {failed}/{total}"
+    )
+
+    print(
+        "Accuracy: "
         f"{(passed / total) * 100:.1f}%"
     )
 
@@ -472,13 +646,16 @@ def main():
             "\nMerchantMate multi-turn invoice "
             "state machine passed."
         )
+
         print(
-            "PayPal execution remains disabled."
+            "PayPal execution paths in this test "
+            "suite were mocked."
         )
+
     else:
         print(
-            "\nDo not enable PayPal execution "
-            "until all conversation tests pass."
+            "\nDo not perform a live Sandbox invoice "
+            "test until all conversation tests pass."
         )
 
 

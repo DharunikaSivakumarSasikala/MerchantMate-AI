@@ -277,8 +277,11 @@ def _extract_invoice_name(
     """
     Extract a customer name only from clear invoice grammar.
 
-    Examples:
+    Supported examples:
+        Create an invoice for Sarah.
+        Create an invoice for Sarah
         Create an invoice for John for $50
+        Create an invoice for Sarah at sarah@example.com
         Create an invoice for Enterprise Corp for $100
         Invoice David 450 USD
         Invoice Sarah $250
@@ -288,6 +291,53 @@ def _extract_invoice_name(
     Email-only invoice commands deliberately return None.
     """
 
+    # First handle "create an invoice for <name>" while the email
+    # is still present. This gives us reliable boundaries for:
+    #
+    # Create an invoice for Sarah.
+    # Create an invoice for Sarah at sarah@example.com.
+    # Create an invoice for Sarah for $300.
+    #
+    create_match = re.search(
+        (
+            r"\bcreate\s+(?:an?\s+)?invoice\s+for\s+"
+            r"(.+?)"
+            r"(?="
+            r"\s+at\s+"
+            + EMAIL_PATTERN
+            + r"|"
+            r"\s+for\s+(?:\$|-?\d|AUD\b|USD\b|EUR\b|GBP\b)"
+            r"|"
+            r"\s+(?:\$|-?\d|AUD\b|USD\b|EUR\b|GBP\b)"
+            r"|"
+            r"[.!?]?\s*$"
+            r")"
+        ),
+        user_message,
+        flags=re.IGNORECASE,
+    )
+
+    if create_match:
+        name = (
+            create_match.group(1)
+            .strip()
+            .rstrip(".!?")
+            .strip()
+        )
+
+        # An email by itself must never become a customer name.
+        if (
+            name
+            and not re.fullmatch(
+                EMAIL_PATTERN,
+                name,
+                flags=re.IGNORECASE,
+            )
+        ):
+            return name
+
+    # Remove email addresses before processing the remaining
+    # supported invoice grammar.
     message_without_email = re.sub(
         EMAIL_PATTERN,
         " ",
@@ -295,16 +345,6 @@ def _extract_invoice_name(
     )
 
     patterns = [
-        # Create an invoice for Sarah at sarah@example.com for $250
-        # Create an invoice for Robert for $400
-        (
-            r"\bcreate\s+(?:an?\s+)?invoice\s+for\s+"
-            r"(.+?)"
-            r"(?=\s+(?:at\s+)?"
-            r"(?:\$|-?\d|AUD\b|USD\b|EUR\b|GBP\b|"
-            r"for\s+\$|for\s+-?\d))"
-        ),
-
         # Invoice David 450 USD
         # Invoice Sarah $250
         (
@@ -337,7 +377,12 @@ def _extract_invoice_name(
         if not match:
             continue
 
-        name = match.group(1).strip()
+        name = (
+            match.group(1)
+            .strip()
+            .rstrip(".!?")
+            .strip()
+        )
 
         # Remove trailing "at" left behind after email removal.
         name = re.sub(
@@ -355,7 +400,14 @@ def _extract_invoice_name(
             flags=re.IGNORECASE,
         ).strip()
 
-        if name:
+        if (
+            name
+            and not re.fullmatch(
+                EMAIL_PATTERN,
+                name,
+                flags=re.IGNORECASE,
+            )
+        ):
             return name
 
     return None
@@ -421,7 +473,7 @@ def _extract_invoice_description(
     # sarah@example.com for tutoring.
     #
     # Requiring "at <email>" gives us a clear boundary between
-    # the customer information and the invoice description.
+    # customer information and invoice description.
     email_description = re.search(
         (
             r"\bat\s+"
@@ -536,7 +588,9 @@ def _normalise_invoice(
     )
 
     if len(emails) == 1:
-        result.customer_email = emails[0]
+        result.customer_email = (
+            emails[0]
+        )
 
     elif len(emails) == 0:
         result.customer_email = None
