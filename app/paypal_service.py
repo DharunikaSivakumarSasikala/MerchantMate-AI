@@ -43,9 +43,7 @@ def get_access_token() -> str:
 
     response.raise_for_status()
 
-    data = response.json()
-
-    return data["access_token"]
+    return response.json()["access_token"]
 
 
 def create_invoice(
@@ -55,7 +53,7 @@ def create_invoice(
     amount: float,
     currency: str = "AUD",
 ) -> str:
-    """Create a draft PayPal invoice and return its invoice ID."""
+    """Create a draft PayPal invoice."""
 
     if not PAYPAL_BUSINESS_EMAIL:
         raise ValueError(
@@ -120,23 +118,11 @@ def create_invoice(
 
     data = response.json()
 
-    print("Create invoice response:")
-    print(data)
-
     if "id" in data:
         return data["id"]
 
     if "href" in data:
         return data["href"].rstrip("/").split("/")[-1]
-
-    links = data.get("links", [])
-
-    for link in links:
-        href = link.get("href")
-        rel = link.get("rel")
-
-        if href and rel in {"self", "invoice"}:
-            return href.rstrip("/").split("/")[-1]
 
     raise ValueError(
         "PayPal created the invoice but no invoice ID "
@@ -172,3 +158,52 @@ def send_invoice(invoice_id: str) -> None:
         print("PayPal send response:", response.text)
 
     response.raise_for_status()
+
+
+def list_invoices(page: int = 1, page_size: int = 20) -> list:
+    """Retrieve invoices from PayPal."""
+
+    token = get_access_token()
+
+    response = requests.get(
+        f"{PAYPAL_BASE_URL}/v2/invoicing/invoices",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        params={
+            "page": page,
+            "page_size": page_size,
+            "total_required": "true",
+        },
+        timeout=20,
+    )
+
+    if not response.ok:
+        print("PayPal list status:", response.status_code)
+        print("PayPal list response:", response.text)
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data.get("items", [])
+
+
+def get_outstanding_invoices() -> list:
+    """Return invoices that have not yet been paid."""
+
+    invoices = list_invoices()
+
+    outstanding_statuses = {
+        "SENT",
+        "UNPAID",
+        "PARTIALLY_PAID",
+        "PAYMENT_PENDING",
+    }
+
+    return [
+        invoice
+        for invoice in invoices
+        if invoice.get("status") in outstanding_statuses
+    ]
