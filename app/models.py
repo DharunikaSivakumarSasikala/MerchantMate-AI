@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,12 +18,22 @@ IntentType = Literal[
 ]
 
 
+AssistantStatus = Literal[
+    "success",
+    "needs_information",
+    "confirmation_required",
+    "unsupported",
+    "error",
+]
+
+
 class AIIntent(BaseModel):
     """
     Structured representation of a user's MerchantMate request.
 
-    The AI layer is responsible only for understanding the user's request.
-    Financial calculations and PayPal operations are handled elsewhere.
+    The AI layer understands the user's request.
+    Business validation, calculations, and PayPal operations are
+    handled elsewhere.
     """
 
     intent: IntentType = Field(
@@ -68,3 +78,37 @@ class AIIntent(BaseModel):
         default=False,
         description="Whether the requested operation changes financial data.",
     )
+
+
+class InvoiceDraft(BaseModel):
+    """
+    Validated invoice information waiting for user confirmation.
+    """
+
+    customer_name: Optional[str] = None
+    customer_email: str
+    amount: float = Field(gt=0)
+    currency: str
+    description: str
+
+
+class AssistantResponse(BaseModel):
+    """
+    Standard response returned by the MerchantMate orchestration layer.
+    """
+
+    status: AssistantStatus
+
+    intent: IntentType
+
+    message: str
+
+    data: Optional[Any] = None
+
+    missing_fields: list[str] = Field(
+        default_factory=list
+    )
+
+    invoice_draft: Optional[InvoiceDraft] = None
+
+    requires_confirmation: bool = False
