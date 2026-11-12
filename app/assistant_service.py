@@ -918,13 +918,107 @@ def _handle_outstanding_invoices() -> AssistantResponse:
         get_outstanding_invoices()
     )
 
+    if not invoices:
+        return AssistantResponse(
+            status="success",
+            intent="outstanding_invoices",
+            message=(
+                "You currently have no outstanding invoices."
+            ),
+            data=invoices,
+        )
+
+    invoice_lines = []
+    total_outstanding = 0.0
+
+    for invoice in invoices:
+        recipients = invoice.get(
+            "primary_recipients",
+            [],
+        )
+
+        customer_name = "Unknown customer"
+
+        if recipients:
+            billing_info = recipients[0].get(
+                "billing_info",
+                {},
+            )
+
+            name = billing_info.get(
+                "name",
+                {},
+            )
+
+            customer_name = (
+                name.get("full_name")
+                or billing_info.get("email_address")
+                or "Unknown customer"
+            )
+
+        due_amount = invoice.get(
+            "due_amount",
+            {},
+        )
+
+        currency = due_amount.get(
+            "currency_code",
+            "AUD",
+        )
+
+        try:
+            amount = float(
+                due_amount.get(
+                    "value",
+                    0,
+                )
+            )
+        except (TypeError, ValueError):
+            amount = 0.0
+
+        total_outstanding += amount
+
+        status = invoice.get(
+            "status",
+            "UNKNOWN",
+        )
+
+        invoice_number = (
+            invoice.get(
+                "detail",
+                {},
+            ).get(
+                "invoice_number"
+            )
+        )
+
+        if invoice_number:
+            invoice_label = (
+                f"Invoice #{invoice_number}"
+            )
+        else:
+            invoice_label = "Invoice"
+
+        invoice_lines.append(
+            f"- **{customer_name}** — "
+            f"{_format_money(amount, currency)} — "
+            f"{status} — {invoice_label}"
+        )
+
+    message = (
+        f"You currently have {len(invoices)} outstanding "
+        f"invoice{'' if len(invoices) == 1 else 's'}:"
+        "\n\n"
+        + "\n".join(invoice_lines)
+        + "\n\n"
+        + f"**Total outstanding:** "
+        + _format_money(total_outstanding)
+    )
+
     return AssistantResponse(
         status="success",
         intent="outstanding_invoices",
-        message=(
-            f"You currently have {len(invoices)} outstanding "
-            f"invoice{'' if len(invoices) == 1 else 's'}."
-        ),
+        message=message,
         data=invoices,
     )
 
