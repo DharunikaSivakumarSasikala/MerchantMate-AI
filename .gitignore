@@ -1,5 +1,30 @@
+# Python virtual environments
 .venv/
+venv/
+
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+
+# Python cache and compiled files
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Testing caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / editor files
+.vscode/
+.idea/
+
+# macOS
 .DS_Store
+
+# Temporary and backup files
+*_backup.py
+*.bak
+*.tmp
+*~
