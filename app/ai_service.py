@@ -524,6 +524,14 @@ def _correct_financial_intent(
     result: AIIntent,
     user_message: str,
 ) -> AIIntent:
+    """
+    Correct common supported analytics requests deterministically.
+
+    Ollama remains responsible for general natural-language
+    classification, while explicit financial phrases are normalised
+    here so common business questions remain reliable.
+    """
+
     message = user_message.lower()
 
     paid_patterns = [
@@ -548,22 +556,62 @@ def _correct_financial_intent(
         r"\bamount outstanding\b",
     ]
 
+    total_invoiced_patterns = [
+        r"\bhow much.*(?:did|have) i invoice\b",
+        r"\bhow much.*have i invoiced\b",
+        r"\bhow much.*did i bill\b",
+        r"\btotal invoiced\b",
+        r"\binvoiced amount\b",
+        r"\bamount invoiced\b",
+    ]
+
+    average_invoice_patterns = [
+        r"\baverage invoice\b",
+        r"\baverage invoice value\b",
+        r"\baverage.*invoiced\b",
+    ]
+
+    top_customer_patterns = [
+        r"\btop customer\b",
+        r"\bbest customer\b",
+        r"\bhighest[- ]paying customer\b",
+        r"\bhighest paying customer\b",
+    ]
+
+    business_summary_patterns = [
+        r"\bbusiness summary\b",
+        r"\bsummar(?:y|ise|ize).*business\b",
+        r"\bsummar(?:y|ise|ize).*invoice activity\b",
+    ]
+
     for pattern in paid_patterns:
-        if re.search(
-            pattern,
-            message,
-        ):
+        if re.search(pattern, message):
             result.intent = "paid_amount"
             return result
 
     for pattern in outstanding_patterns:
-        if re.search(
-            pattern,
-            message,
-        ):
-            result.intent = (
-                "outstanding_amount"
-            )
+        if re.search(pattern, message):
+            result.intent = "outstanding_amount"
+            return result
+
+    for pattern in total_invoiced_patterns:
+        if re.search(pattern, message):
+            result.intent = "total_invoiced"
+            return result
+
+    for pattern in average_invoice_patterns:
+        if re.search(pattern, message):
+            result.intent = "average_invoice_value"
+            return result
+
+    for pattern in top_customer_patterns:
+        if re.search(pattern, message):
+            result.intent = "top_customer"
+            return result
+
+    for pattern in business_summary_patterns:
+        if re.search(pattern, message):
+            result.intent = "business_summary"
             return result
 
     return result
