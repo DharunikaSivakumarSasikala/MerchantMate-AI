@@ -868,14 +868,18 @@ Potential future extensions include:
 
 ## Demo
 
-The current application runs locally using:
+Watch the MerchantMate AI demo on YouTube:
+
+https://youtu.be/zk7XVtnG4qA
+
+The demo showcases natural-language business analytics, outstanding invoice retrieval, safe invoice creation with explicit confirmation, PayPal Sandbox execution, and the updated business dashboard.
+
+The application runs locally using:
 
 - PayPal Sandbox
 - Ollama
 - FastAPI
 - Streamlit
-
-Demo screenshots and video will be added for the hackathon submission.
 
 ---
 
@@ -902,9 +906,10 @@ MerchantMate AI was developed for the PayPal AI Hackathon by:
 - Delisha D'Souza
 
 ---
+
 ## License
 
-This project is released under the license included in the `LICENSE` file.
+This project is released under the MIT License. See the `LICENSE` file for details.
 
 ---
 
