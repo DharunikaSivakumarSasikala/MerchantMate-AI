@@ -929,119 +929,254 @@ def _handle_outstanding_invoices() -> AssistantResponse:
     )
 
 
-def _handle_outstanding_amount() -> AssistantResponse:
-    amount = (
-        calculate_outstanding_amount()
+def _period_display(
+    period: Optional[str],
+) -> Optional[str]:
+    """
+    Convert a period value into a readable label for assistant messages.
+
+    The analytics layer remains responsible for normalising and applying
+    the actual date range.
+    """
+
+    if not period:
+        return None
+
+    cleaned = (
+        period.strip()
+        .lower()
+        .replace("_", " ")
     )
+
+    if cleaned in {
+        "all",
+        "all time",
+        "everything",
+    }:
+        return None
+
+    return cleaned
+
+
+def _handle_outstanding_amount(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    amount = calculate_outstanding_amount(
+        period=period
+    )
+
+    period_label = _period_display(
+        period
+    )
+
+    if period_label:
+        message = (
+            f"For invoices dated {period_label}, "
+            f"{_format_money(amount)} is currently outstanding."
+        )
+    else:
+        message = (
+            f"You currently have "
+            f"{_format_money(amount)} outstanding."
+        )
 
     return AssistantResponse(
         status="success",
         intent="outstanding_amount",
-        message=(
-            f"You currently have "
-            f"{_format_money(amount)} outstanding."
-        ),
+        message=message,
         data={
             "amount": amount,
             "currency": "AUD",
+            "period": period,
         },
     )
 
 
-def _handle_total_invoiced() -> AssistantResponse:
-    amount = (
-        calculate_total_invoiced()
+def _handle_total_invoiced(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    amount = calculate_total_invoiced(
+        period=period
     )
+
+    period_label = _period_display(
+        period
+    )
+
+    if period_label:
+        message = (
+            f"Your total invoiced amount {period_label} is "
+            f"{_format_money(amount)}."
+        )
+    else:
+        message = (
+            f"Your total invoiced amount is "
+            f"{_format_money(amount)}."
+        )
 
     return AssistantResponse(
         status="success",
         intent="total_invoiced",
-        message=(
-            f"Your total invoiced amount is "
-            f"{_format_money(amount)}."
-        ),
+        message=message,
         data={
             "amount": amount,
             "currency": "AUD",
+            "period": period,
         },
     )
 
 
-def _handle_paid_amount() -> AssistantResponse:
-    amount = (
-        calculate_paid_amount()
+def _handle_paid_amount(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    amount = calculate_paid_amount(
+        period=period
     )
+
+    period_label = _period_display(
+        period
+    )
+
+    if period_label:
+        message = (
+            f"The value of invoices dated {period_label} "
+            f"that are currently paid is "
+            f"{_format_money(amount)}."
+        )
+    else:
+        message = (
+            f"You have received "
+            f"{_format_money(amount)} in paid invoices."
+        )
 
     return AssistantResponse(
         status="success",
         intent="paid_amount",
-        message=(
-            f"You have received "
-            f"{_format_money(amount)} in paid invoices."
-        ),
+        message=message,
         data={
             "amount": amount,
             "currency": "AUD",
+            "period": period,
         },
     )
 
 
-def _handle_average_invoice_value() -> AssistantResponse:
-    amount = (
-        calculate_average_invoice_value()
+def _handle_average_invoice_value(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    amount = calculate_average_invoice_value(
+        period=period
     )
+
+    period_label = _period_display(
+        period
+    )
+
+    if period_label:
+        message = (
+            f"Your average invoice value {period_label} is "
+            f"{_format_money(amount)}."
+        )
+    else:
+        message = (
+            f"Your average invoice value is "
+            f"{_format_money(amount)}."
+        )
 
     return AssistantResponse(
         status="success",
         intent="average_invoice_value",
-        message=(
-            f"Your average invoice value is "
-            f"{_format_money(amount)}."
-        ),
+        message=message,
         data={
             "amount": amount,
             "currency": "AUD",
+            "period": period,
         },
     )
 
 
-def _handle_top_customer() -> AssistantResponse:
-    customer = get_top_customer()
+def _handle_top_customer(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    customer = get_top_customer(
+        period=period
+    )
+
+    period_label = _period_display(
+        period
+    )
 
     if not customer:
+        if period_label:
+            message = (
+                "There is not enough invoice data "
+                f"for {period_label} to identify a top customer yet."
+            )
+        else:
+            message = (
+                "There is not enough invoice data to identify "
+                "a top customer yet."
+            )
+
         return AssistantResponse(
             status="success",
             intent="top_customer",
-            message=(
-                "There is not enough invoice data to identify "
-                "a top customer yet."
-            ),
+            message=message,
+            data=customer,
+        )
+
+    if period_label:
+        message = (
+            f"Your top customer {period_label} is "
+            f"{customer['customer']} with "
+            f"{_format_money(customer['total'])} "
+            "in invoice value."
+        )
+    else:
+        message = (
+            f"Your top customer is {customer['customer']} "
+            f"with {_format_money(customer['total'])} "
+            "in invoice value."
         )
 
     return AssistantResponse(
         status="success",
         intent="top_customer",
-        message=(
-            f"Your top customer is {customer['customer']} "
-            f"with {_format_money(customer['total'])} "
-            "in invoice value."
-        ),
-        data=customer,
+        message=message,
+        data={
+            **customer,
+            "period": period,
+        },
     )
 
 
-def _handle_business_summary() -> AssistantResponse:
-    summary = get_business_summary()
+def _handle_business_summary(
+    period: Optional[str] = None,
+) -> AssistantResponse:
+    summary = get_business_summary(
+        period=period
+    )
+
+    period_label = _period_display(
+        period
+    )
+
+    if period_label:
+        message = (
+            "Here is your MerchantMate business summary "
+            f"for {period_label}."
+        )
+    else:
+        message = (
+            "Here is your current MerchantMate business summary."
+        )
 
     return AssistantResponse(
         status="success",
         intent="business_summary",
-        message=(
-            "Here is your current MerchantMate business summary."
-        ),
+        message=message,
         data=summary,
     )
-
 
 def _handle_help() -> AssistantResponse:
     return AssistantResponse(
@@ -1084,23 +1219,35 @@ def process_intent(
         "outstanding_invoices": (
             _handle_outstanding_invoices
         ),
-        "outstanding_amount": (
-            _handle_outstanding_amount
+        "outstanding_amount": lambda: (
+            _handle_outstanding_amount(
+                intent.period
+            )
         ),
-        "total_invoiced": (
-            _handle_total_invoiced
+        "total_invoiced": lambda: (
+            _handle_total_invoiced(
+                intent.period
+            )
         ),
-        "paid_amount": (
-            _handle_paid_amount
+        "paid_amount": lambda: (
+            _handle_paid_amount(
+                intent.period
+            )
         ),
-        "average_invoice_value": (
-            _handle_average_invoice_value
+        "average_invoice_value": lambda: (
+            _handle_average_invoice_value(
+                intent.period
+            )
         ),
-        "top_customer": (
-            _handle_top_customer
+        "top_customer": lambda: (
+            _handle_top_customer(
+                intent.period
+            )
         ),
-        "business_summary": (
-            _handle_business_summary
+        "business_summary": lambda: (
+            _handle_business_summary(
+                intent.period
+            )
         ),
         "help": (
             _handle_help
@@ -1129,7 +1276,6 @@ def process_intent(
                 f"{exc}"
             ),
         )
-
 
 def process_message(
     user_message: str,
