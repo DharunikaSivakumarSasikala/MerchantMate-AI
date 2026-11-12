@@ -309,16 +309,23 @@ MerchantMate-AI/
 │   └── demo_customers.json
 │
 ├── tests/
-│   ├── test_ai_service.py
-│   ├── test_assistant_service.py
 │   ├── test_api.py
 │   ├── test_conversation_state.py
-│   ├── test_end_to_end.py
 │   ├── test_paypal_execution.py
-│   ├── test_paypal_sandbox_integration.py
 │   ├── test_period_analytics.py
 │   ├── test_period_assistant.py
 │   └── test_streamlit_app.py
+│
+├── scripts/
+│   ├── check_ai_service.py
+│   ├── check_analytics.py
+│   ├── check_assistant_service.py
+│   ├── check_end_to_end.py
+│   ├── check_outstanding_invoices.py
+│   ├── check_paypal_connection.py
+│   ├── check_paypal_sandbox.py
+│   ├── create_sandbox_invoice.py
+│   └── list_sandbox_invoices.py
 │
 ├── .github/
 │   └── workflows/

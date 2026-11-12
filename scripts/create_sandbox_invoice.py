@@ -1,8 +1,19 @@
+import os
+
+from dotenv import load_dotenv
+
 from app.paypal_service import create_invoice, send_invoice
 
 
 def main():
-    customer_email = "sb-dq6s353841846@personal.example.com"
+    load_dotenv()
+
+    customer_email = os.getenv("PAYPAL_SANDBOX_CUSTOMER_EMAIL")
+
+    if not customer_email:
+        raise RuntimeError(
+            "PAYPAL_SANDBOX_CUSTOMER_EMAIL is not configured in .env."
+        )
 
     try:
         invoice_id = create_invoice(
