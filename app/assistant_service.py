@@ -1161,15 +1161,56 @@ def _handle_business_summary(
         period
     )
 
-    if period_label:
-        message = (
-            "Here is your MerchantMate business summary "
-            f"for {period_label}."
+    top_customer = summary.get(
+        "top_customer",
+        {},
+    )
+
+    top_customer_name = (
+        top_customer.get("customer")
+        if top_customer
+        else None
+    )
+
+    top_customer_total = (
+        top_customer.get("total", 0.0)
+        if top_customer
+        else 0.0
+    )
+
+    if top_customer_name:
+        top_customer_line = (
+            f"Top customer: {top_customer_name} — "
+            f"{_format_money(top_customer_total)}"
         )
     else:
-        message = (
-            "Here is your current MerchantMate business summary."
+        top_customer_line = (
+            "Top customer: Not enough invoice data"
         )
+
+    if period_label:
+        heading = (
+            "Here is your MerchantMate business summary "
+            f"for {period_label}:"
+        )
+    else:
+        heading = (
+            "Here is your current MerchantMate business summary:"
+        )
+
+    message = (
+        f"{heading}\n\n"
+        f"Total invoiced: "
+        f"{_format_money(summary['total_invoiced'])}\n"
+        f"Outstanding: "
+        f"{_format_money(summary['outstanding_amount'])}\n"
+        f"Paid: "
+        f"{_format_money(summary['paid_amount'])}\n"
+        f"Average invoice: "
+        f"{_format_money(summary['average_invoice_value'])}\n"
+        f"Invoices: {summary['invoice_count']}\n"
+        f"{top_customer_line}"
+    )
 
     return AssistantResponse(
         status="success",
