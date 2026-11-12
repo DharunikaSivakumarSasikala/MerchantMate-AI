@@ -1200,16 +1200,16 @@ def _handle_business_summary(
 
     message = (
         f"{heading}\n\n"
-        f"Total invoiced: "
+        f"- **Total invoiced:** "
         f"{_format_money(summary['total_invoiced'])}\n"
-        f"Outstanding: "
+        f"- **Outstanding:** "
         f"{_format_money(summary['outstanding_amount'])}\n"
-        f"Paid: "
+        f"- **Paid:** "
         f"{_format_money(summary['paid_amount'])}\n"
-        f"Average invoice: "
+        f"- **Average invoice:** "
         f"{_format_money(summary['average_invoice_value'])}\n"
-        f"Invoices: {summary['invoice_count']}\n"
-        f"{top_customer_line}"
+        f"- **Invoices:** {summary['invoice_count']}\n"
+        f"- **{top_customer_line}**"
     )
 
     return AssistantResponse(
