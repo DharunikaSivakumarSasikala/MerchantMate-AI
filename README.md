@@ -894,7 +894,14 @@ https://github.com/DharunikaSivakumarSasikala/MerchantMate-AI
 MerchantMate AI was developed for a **PayPal AI Hackathon** as a demonstration of how conversational AI can make financial tools easier to use while keeping sensitive financial actions deterministic, validated, and explicitly controlled by the user.
 
 ---
+## Team
 
+MerchantMate AI was developed for the PayPal AI Hackathon by:
+
+- Dharunika Sivakumar Sasikala
+- Delisha D'Souza
+
+---
 ## License
 
 This project is released under the license included in the `LICENSE` file.
